@@ -80,20 +80,34 @@ exports.getTreeData = async (req, res) => {
 
     try {
         const result = await session.run(
-            'MATCH (n:Person)-[r]-(m:Person) ' +
+            'MATCH (n:Person) OPTIONAL MATCH (n)-[r]-(m:Person) ' +
             'RETURN COLLECT(DISTINCT n) AS nodes, COLLECT(DISTINCT r) AS relationships'
         );
-        const nodes = result.records[0].get('nodes').map(node => node.properties);
-        const relationships = result.records[0].get('relationships').map(rel => ({
-            source: rel.start.properties.uuid,
-            target: rel.end.properties.uuid,
-            type: rel.type
+
+        const nodes = result.records[0].get('nodes').map(node => ({
+            uuid: node.properties.uuid,
+            name: node.properties.name,
+            email: node.properties.email,
         }));
 
-        res.status(200).json({ nodes, relationships });
+        const relationships = result.records[0].get('relationships').map(rel => {
+            // Add a check to ensure rel.start and rel.end are not undefined
+            if (rel && rel.start && rel.end) {
+                return {
+                    // This is where the error is. The `uuid` is on the properties object
+                    source: rel.start.properties.uuid,
+                    target: rel.end.properties.uuid,
+                    type: rel.type
+                };
+            }
+            return null; // Return null if the relationship is malformed
+        }).filter(Boolean); // Filter out any null values from the array
+
+        res.status(200).send({ nodes, relationships });
+
     } catch (error) {
         console.error('Error fetching tree data:', error);
-        res.status(500).json({ error: 'Failed to retrieve tree data.' });
+        res.status(500).send({ error: 'Failed to fetch tree data.' });
     } finally {
         await session.close();
     }
